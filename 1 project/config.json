@@ -1,0 +1,5 @@
+{
+    "fs_path": "virtual_filesystem.tar",
+    "log_path": "log.xml",
+    "start_script_path": "start_script.sh"
+}
