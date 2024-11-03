@@ -3,12 +3,15 @@ import json
 import tarfile
 import xml.etree.ElementTree as ET
 import datetime
+import shutil
+import calendar
 
 class ShellEmulator:
     def __init__(self, config_file):
         self.load_config(config_file)
         self.current_directory = "virtual_fs"  # Текущая директория внутри виртуальной файловой системы
         self.log_actions = []
+        self.load_virtual_fs()  # Загружаем виртуальную файловую систему при инициализации
 
     def load_config(self, config_file):
         with open(config_file, 'r') as f:
@@ -32,6 +35,7 @@ class ShellEmulator:
             print(f"Archive {self.fs_archive} not found. Creating a default one.")
             self.create_virtual_fs()
 
+        # Распаковываем виртуальную файловую систему в каталог при инициализации
         with tarfile.open(self.fs_archive, 'r') as tar:
             tar.extractall(path='virtual_fs')
 
@@ -58,6 +62,8 @@ class ShellEmulator:
         elif cmd == "cal":
             return self.cmd_cal()
         elif cmd == "cp":
+            if len(parts) < 3:
+                return "cp requires source and destination arguments"
             return self.cmd_cp(parts[1], parts[2])
         else:
             return "Unknown command"
@@ -78,13 +84,30 @@ class ShellEmulator:
             return f"Directory {path} not found"
 
     def cmd_rev(self, filename):
-        return f"Reversed {filename} (not implemented)"
+        file_path = os.path.join(self.current_directory, filename)
+        try:
+            with open(file_path, 'r') as f:
+                content = f.read()
+            reversed_content = content[::-1]
+            return reversed_content
+        except FileNotFoundError:
+            return f"File {filename} not found"
 
     def cmd_cal(self):
-        return "Calendar (not implemented)"
+        year = datetime.datetime.now().year
+        month = datetime.datetime.now().month
+        return calendar.month(year, month)
 
     def cmd_cp(self, src, dest):
-        return f"Copied from {src} to {dest} (not implemented)"
+        src_path = os.path.join(self.current_directory, src)
+        dest_path = os.path.join(self.current_directory, dest)
+        try:
+            shutil.copy(src_path, dest_path)
+            return f"Copied from {src} to {dest}"
+        except FileNotFoundError:
+            return f"File {src} not found"
+        except Exception as e:
+            return str(e)
 
     def save_log(self):
         root = ET.Element("log")
