@@ -5,11 +5,13 @@ import xml.etree.ElementTree as ET
 import datetime
 import shutil
 import calendar
+from io import BytesIO
 
 class ShellEmulator:
     def __init__(self, config_file):
         self.load_config(config_file)
-        self.current_directory = "virtual_fs"  # Текущая директория внутри виртуальной файловой системы
+        self.fs_structure = {}  # Хранит файлы и каталоги виртуальной файловой системы
+        self.current_directory = ""  # Текущая директория внутри виртуальной файловой системы
         self.log_actions = []
         self.load_virtual_fs()  # Загружаем виртуальную файловую систему при инициализации
 
@@ -20,25 +22,36 @@ class ShellEmulator:
             self.log_file_path = config['log_path']
             self.start_script_path = config['start_script_path']
 
-    def create_virtual_fs(self):
-        with tarfile.open(self.fs_archive, 'w') as tar:
-            test_files = ['file1.txt', 'file2.txt', 'directory/file3.txt']
-            for file in test_files:
-                file_path = os.path.join('virtual_fs', file)
-                os.makedirs(os.path.dirname(file_path), exist_ok=True)
-                with open(file_path, 'w') as f:
-                    f.write(f"Contents of {file}")
-                tar.add(file_path, arcname=file)
 
     def load_virtual_fs(self):
         if not os.path.exists(self.fs_archive):
-            print(f"Archive {self.fs_archive} not found. Creating a default one.")
-            self.create_virtual_fs()
+            print(f"Archive {self.fs_archive} not found.")
+            exit(1)
 
-        # Распаковываем виртуальную файловую систему в каталог при инициализации
+        # Загружаем файловую систему в память, используя tarfile
         with tarfile.open(self.fs_archive, 'r') as tar:
-            tar.extractall(path='virtual_fs')
+            for member in tar.getmembers():
+                if member.isdir():
+                    self.fs_structure[member.name] = set()
+                elif member.isfile():
+                    file_content = tar.extractfile(member).read().decode()
+                    self.fs_structure[member.name] = file_content
+        
+        self.fs_structure[''] = set()
+        for member in self.fs_structure:
+            if member == '':
+                continue
 
+            if member.count('/') == 0:
+                self.fs_structure[''].add(member)
+
+            if type(self.fs_structure[member]) != set:
+                continue
+
+            for smember in self.fs_structure:
+                if smember.startswith(member) and member.count('/')+1 == smember.count('/'):
+                    self.fs_structure[member].add(os.path.basename(smember))
+        
     def log_action(self, action):
         self.log_actions.append((datetime.datetime.now(), action))
 
@@ -68,16 +81,23 @@ class ShellEmulator:
         else:
             return "Unknown command"
 
-
     def cmd_ls(self):
-        try:
-            return "\n".join(os.listdir(self.current_directory))
-        except FileNotFoundError:
+        path = self.current_directory if self.current_directory in self.fs_structure else ""
+        if path in self.fs_structure:
+            if type(self.fs_structure[path]) == set:
+                return "\n".join(self.fs_structure[path])
+            else:
+                return "Not a directory"
+        else:
             return "Directory not found"
 
     def cmd_cd(self, path):
-        new_path = os.path.join(self.current_directory, path)
-        if os.path.isdir(new_path):
+        if path == "..":
+            new_path = os.path.dirname(self.current_directory)
+        else:
+            new_path = os.path.join(self.current_directory, path)
+
+        if new_path in self.fs_structure and type(self.fs_structure[new_path]) == set:
             self.current_directory = new_path
             return f"Changed directory to {self.current_directory}"
         else:
@@ -85,29 +105,25 @@ class ShellEmulator:
 
     def cmd_rev(self, filename):
         file_path = os.path.join(self.current_directory, filename)
-        try:
-            with open(file_path, 'r') as f:
-                content = f.read()
-            reversed_content = content[::-1]
-            return reversed_content
-        except FileNotFoundError:
+        if file_path in self.fs_structure and type(self.fs_structure[file_path]) == str:
+            return self.fs_structure[file_path][::-1]
+        else:
             return f"File {filename} not found"
 
     def cmd_cal(self):
         year = datetime.datetime.now().year
         month = datetime.datetime.now().month
         return calendar.month(year, month)
-
+    
     def cmd_cp(self, src, dest):
         src_path = os.path.join(self.current_directory, src)
         dest_path = os.path.join(self.current_directory, dest)
-        try:
-            shutil.copy(src_path, dest_path)
+        if src_path in self.fs_structure:
+            self.fs_structure[self.current_directory].add(dest)
+            self.fs_structure[dest_path] = self.fs_structure[src_path]
             return f"Copied from {src} to {dest}"
-        except FileNotFoundError:
+        else:
             return f"File {src} not found"
-        except Exception as e:
-            return str(e)
 
     def save_log(self):
         root = ET.Element("log")
