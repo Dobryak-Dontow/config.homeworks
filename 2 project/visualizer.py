@@ -1,94 +1,112 @@
 import os
 import sys
-import csv
-import subprocess
+import gzip
+import requests
+from collections import defaultdict
 
-def parse_config(config_path):
-    """Читает и парсит файл конфигурации."""
-    config = {}
+def download_packages_gz(base_url, distro, component, arch):
+    """
+    Загружает и распаковывает файл Packages.gz.
+    """
+    url = f"{base_url}/dists/{distro}/{component}/binary-{arch}/Packages.gz"
     try:
-        with open(config_path, mode='r', encoding='utf-8') as file:
-            reader = csv.DictReader(file)
-            for row in reader:
-                config.update(row)
-    except FileNotFoundError:
-        print(f"Ошибка: файл конфигурации {config_path} не найден.")
-        sys.exit(1)
+        response = requests.get(url, stream=True)
+        response.raise_for_status()
+        with gzip.open(response.raw, 'rt', encoding='utf-8') as f:
+            return f.read()
     except Exception as e:
-        print(f"Ошибка при чтении конфигурации: {e}")
+        print(f"Ошибка при загрузке {url}: {e}")
         sys.exit(1)
-    return config
 
-def get_dependencies(package_name, max_depth):
-    """Получает зависимости пакета с использованием команды apt-cache."""
-    dependencies = {}
+def parse_packages(packages_data):
+    """
+    Парсит содержимое файла Packages.gz и возвращает зависимости пакетов.
+    """
+    dependencies = defaultdict(list)
+    current_package = None
+
+    for line in packages_data.splitlines():
+        line = line.strip()
+        if line.startswith("Package:"):
+            current_package = line.split(":", 1)[1].strip()
+        elif line.startswith("Depends:") and current_package:
+            dep_line = line.split(":", 1)[1].strip()
+            deps = [dep.split()[0] for dep in dep_line.split(",")]
+            dependencies[current_package].extend(deps)
+        elif not line:  # Пустая строка — конец блока текущего пакета
+            current_package = None
+
+    return dependencies
+
+def build_dependency_graph(package_name, dependencies, max_depth):
+    """
+    Построение графа зависимостей до указанной глубины.
+    """
+    graph = defaultdict(list)
     visited = set()
 
     def fetch_deps(pkg, depth):
         if depth > max_depth or pkg in visited:
             return
         visited.add(pkg)
-        # Удаляем угловые скобки из имени пакета
-        clean_pkg = pkg.strip("<>")
-        try:
-            output = subprocess.check_output(["wsl", "apt-cache", "depends", clean_pkg], text=True)
-            deps = []
-            for line in output.splitlines():
-                line = line.strip()
-                if line.startswith("Depends:"):
-                    dep = line.split("Depends:")[1].strip()
-                    deps.append(dep)
-            dependencies[pkg] = deps
-            for dep in deps:
-                fetch_deps(dep, depth + 1)
-        except subprocess.CalledProcessError as e:
-            print(f"Ошибка при вызове apt-cache: {e}")
-        except Exception as e:
-            print(f"Не удалось получить зависимости для {pkg}: {e}")
+        for dep in dependencies.get(pkg, []):
+            graph[pkg].append(dep)
+            fetch_deps(dep, depth + 1)
 
     fetch_deps(package_name, 0)
-    return dependencies
+    return graph
 
-def generate_mermaid_graph(dependencies):
-    """Генерирует описание графа в формате Mermaid."""
-    graph = ["graph TD"]
-    for pkg, deps in dependencies.items():
+def generate_mermaid_graph(graph):
+    """
+    Генерирует граф в формате Mermaid.
+    """
+    mermaid = ["graph TD"]
+    for pkg, deps in graph.items():
         for dep in deps:
-            graph.append(f"    {pkg} --> {dep}")
-    return "\n".join(graph)
+            mermaid.append(f"    {pkg} --> {dep}")
+    return "\n".join(mermaid)
 
 def main():
-    # Укажите путь к конфигурационному файлу
+    # Настройки
     config_path = r"c:\Users\Slava\vsCODE\2 project\config.csv"
+    base_url = "http://archive.ubuntu.com/ubuntu"
+    distro = "focal"
+    component = "main"
+    arch = "amd64"
 
-    # Проверяем наличие файла конфигурации
+    # Проверка конфигурации
     if not os.path.exists(config_path):
         print(f"Ошибка: файл конфигурации {config_path} не найден.")
         sys.exit(1)
 
-    # Парсим конфигурационный файл
-    config = parse_config(config_path)
+    # Чтение конфигурации
+    with open(config_path, 'r', encoding='utf-8') as file:
+        visualizer_path, package_name, output_file, max_depth = map(str.strip, file.readlines()[1].split(','))
 
-    # Получаем параметры из конфигурации
-    visualizer_path = config.get('visualizer_path')
-    package_name = config.get('package_name')
-    output_file = config.get('output_file')
-    max_depth = int(config.get('max_depth', 1))
+    max_depth = int(max_depth)
 
-    # Получаем зависимости
-    dependencies = get_dependencies(package_name, max_depth)
+    # Загрузка и парсинг файла Packages.gz
+    print("Загрузка Packages.gz...")
+    packages_data = download_packages_gz(base_url, distro, component, arch)
+    print("Парсинг Packages.gz...")
+    dependencies = parse_packages(packages_data)
 
-    # Генерируем граф в формате Mermaid
-    graph = generate_mermaid_graph(dependencies)
+    # Построение графа зависимостей
+    print("Построение графа зависимостей...")
+    graph = build_dependency_graph(package_name, dependencies, max_depth)
 
-    # Записываем граф в файл
+    # Генерация Mermaid-графа
+    print("Генерация Mermaid-графа...")
+    mermaid_graph = generate_mermaid_graph(graph)
+
+    # Запись в файл
     if output_file:
-        with open(output_file, mode='w', encoding='utf-8') as file:
-            file.write(graph)
+        with open(output_file, 'w', encoding='utf-8') as file:
+            file.write(mermaid_graph)
         print(f"Граф зависимостей записан в файл {output_file}.")
     else:
         print("Граф зависимостей:")
-        print(graph)
+        print(mermaid_graph)
 
 if __name__ == "__main__":
     main()
