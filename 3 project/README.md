@@ -86,7 +86,9 @@ pip install -r requirements.txt
 
 ### Запуск транспилятора
 ```bash
-python src/transpiler.py -i input.toml -o output.txt
+python src/transpiler.py -i examples/example1.toml -o output.txt
+python src/transpiler.py -i examples/example2.toml -o output.txt
+python src/transpiler.py -i examples/example3.toml -o output.txt
 ```
 
 ### Параметры командной строки
