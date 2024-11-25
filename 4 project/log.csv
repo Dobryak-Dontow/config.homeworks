@@ -1,4 +1,0 @@
-command,opcode,operands
-LOAD,2,2,20,100
-LOAD,2,2,30,101
-MIN,6,101,100,102,103
