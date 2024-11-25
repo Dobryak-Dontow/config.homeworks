@@ -1,0 +1,10 @@
+[example]
+key1 = 1
+key2 = "#(key1)"
+
+[example.array]
+array_key = [1, 2, 3]
+
+[example.table]
+sub_key1 = 10
+sub_key2 = "#(sub_key1)"
