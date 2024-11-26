@@ -1,0 +1,13 @@
+table([
+    example = table([
+        key1 = 1,
+        key2 = 1,
+        array = table([
+            array_key = [1, 2, 3],
+        ]),
+        table = table([
+            sub_key1 = 10,
+            sub_key2 = 10,
+        ]),
+    ]),
+])
