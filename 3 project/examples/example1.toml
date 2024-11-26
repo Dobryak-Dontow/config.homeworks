@@ -1,4 +1,0 @@
-[example]
-key1 = 42
-key2 = "#(key1)"
-key3 = "#(key2)"

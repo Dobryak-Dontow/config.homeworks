@@ -1,7 +1,0 @@
-[example]
-key1 = 100
-key2 = "#(key1)"
-
-[example.nested]
-nested_key1 = 200
-nested_key2 = "#(nested_key1)"

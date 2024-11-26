@@ -1,7 +1,0 @@
-table([
-    example = table([
-        key1 = 42,
-        key2 = 42,
-        key3 = 42,
-    ]),
-])
